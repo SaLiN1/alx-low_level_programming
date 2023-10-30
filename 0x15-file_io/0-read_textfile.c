@@ -7,11 +7,10 @@
  *
  * Return: number bytes read/printed
  */
-
 ssize_t read_textfile(const char *filename, size_t letters)
 {
 	int S;
-	ssize_t len0, lenw;
+	ssize_t lenr, lenw;
 	char *buffer;
 
 	if (filename == NULL)
@@ -25,16 +24,16 @@ ssize_t read_textfile(const char *filename, size_t letters)
 		close(S);
 		return (0);
 	}
-	len0 = read(S, buffer, letters);
+	lenr = read(S, buffer, letters);
 	close(S);
-	if (len0 == -1)
+	if (lenr == -1)
 	{
 		free(buffer);
 		return (0);
 	}
 	lenw = write(STDOUT_FILENO, buffer, lenr);
 	free(buffer);
-	if (len0 != lenw)
+	if (lenr != lenw)
 		return (0);
 	return (lenw);
 }
