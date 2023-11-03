@@ -12,10 +12,12 @@ void print_class(unsigned char *e_ident);
 void print_data(unsigned char *e_ident);
 void print_version(unsigned char *e_ident);
 void print_abi(unsigned char *e_ident);
-void print_osabi(unsigned char *e_ident);
+void print_abi_version(unsigned char *e_ident);
 void print_type(unsigned int e_type, unsigned char *e_ident);
 void print_entry(unsigned long int e_entry, unsigned char *e_ident);
 void close_elf(int elf);
+void lseek_elf(int elf, off_t offset);
+void print_error(char *message);
 
 /**
  * check_elf - Checks if a file is an ELF file.
@@ -23,20 +25,16 @@ void close_elf(int elf);
  *
  * Description: If the file is not an ELF file - exit code 98.
  */
+
 void check_elf(unsigned char *e_ident)
 {
-	int index;
-
-	for (index = 0; index < 4; index++)
+	if (e_ident[EI_MAG0] != ELFMAG0 ||
+	e_ident[EI_MAG1] != ELFMAG1 ||
+	e_ident[EI_MAG2] != ELFMAG2 ||
+	e_ident[EI_MAG3] != ELFMAG3)
 	{
-		if (e_ident[index] != 127 &&
-		    e_ident[index] != 'E' &&
-		    e_ident[index] != 'L' &&
-		    e_ident[index] != 'F')
-		{
-			dprintf(STDERR_FILENO, "Error: Not an ELF file\n");
-			exit(98);
-		}
+	print_error("Error: Not an ELF file\n");
+	exit(98);
 	}
 }
 
@@ -73,6 +71,57 @@ void print_class(unsigned char *e_ident)
 
 	switch (e_ident[EI_CLASS])
 	{
+void print_osabi(unsigned char *e_ident)
+{
+	printf("  OS/ABI:                            ");
+
+	switch (e_ident[EI_OSABI])
+	{
+	case ELFOSABI_NONE:
+		printf("UNIX - System V\n");
+		break;
+	case ELFOSABI_HPUX:
+		printf("UNIX - HP-UX\n");
+		break;
+	case ELFOSABI_NETBSD:
+		printf("UNIX - NetBSD\n");
+		break;
+	case ELFOSABI_LINUX:
+		printf("UNIX - Linux\n");
+		break;
+	case ELFOSABI_SOLARIS:
+		printf("UNIX - Solaris\n");
+		break;
+	case ELFOSABI_IRIX:
+		printf("UNIX - IRIX\n");
+		break;
+	case ELFOSABI_FREEBSD:
+		printf("UNIX - FreeBSD\n");
+		break;
+	case ELFOSABI_TRU64:
+		printf("UNIX - TRU64\n");
+		break;
+	case ELFOSABI_ARM:
+		printf("ARM\n");
+		break;
+	case ELFOSABI_STANDALONE:
+		printf("Standalone App\n");
+		break;
+	default:
+		printf("<unknown: %x>\n", e_ident[EI_OSABI]);
+	}
+}
+
+/**
+ * print_abi - Prints the ABI version of an ELF header.
+ * @e_ident: A pointer to an array containing the ELF ABI version.
+ */
+void print_abi(unsigned char *e_ident)
+{
+	printf("  ABI Version:                       %d\n",
+	       e_ident[EI_ABIVERSION]);
+}
+
 /**
  * print_type - Prints the type of an ELF header.
  * @e_type: The ELF type.
@@ -157,45 +206,87 @@ void close_elf(int elf)
  * Description: If the file is not an ELF File or
  *              the function fails - exit code 98.
  */
-int main(int __attribute__((__unused__)) argc, char *argv[])
-{
-	Elf64_Ehdr *header;
-	int o, r;
 
-	o = open(argv[1], O_RDONLY);
+int main(int argc, char *argv[])
+{
+	if (argc != 2)
+	{
+	print_error("Usage: elf_header elf_filename\n");
+	exit(98);
+	}
+
+	int o = open(argv[1], O_RDONLY);
 	if (o == -1)
 	{
-		dprintf(STDERR_FILENO, "Error: Can't read file %s\n", argv[1]);
-		exit(98);
+	print_error("Error: Can't read file\n");
+	exit(98);
 	}
-	header = malloc(sizeof(Elf64_Ehdr));
+
+	unsigned char e_ident[EI_NIDENT];
+	ssize_t r = read(o, e_ident, EI_NIDENT);
+	if (r == -1)
+	{
+	close_elf(o);
+	print_error("Error: Can't read ELF header\n");
+	exit(98);
+	}
+
+	check_elf(e_ident);
+	lseek_elf(o, 0);
+
+	Elf64_Ehdr *header = malloc(sizeof(Elf64_Ehdr));
 	if (header == NULL)
 	{
-		close_elf(o);
-		dprintf(STDERR_FILENO, "Error: Can't read file %s\n", argv[1]);
-		exit(98);
+	close_elf(o);
+	print_error("Error: Memory allocation failed\n");
+	exit(98);
 	}
+
 	r = read(o, header, sizeof(Elf64_Ehdr));
 	if (r == -1)
 	{
-		free(header);
-		close_elf(o);
-		dprintf(STDERR_FILENO, "Error: `%s`: No such file\n", argv[1]);
-		exit(98);
+	free(header);
+	close_elf(o);
+	print_error("Error: Can't read ELF header\n");
+	exit(98);
 	}
 
-	check_elf(header->e_ident);
 	printf("ELF Header:\n");
-	print_magic(header->e_ident);
-	print_class(header->e_ident);
-	print_data(header->e_ident);
-	print_version(header->e_ident);
-	print_osabi(header->e_ident);
-	print_abi(header->e_ident);
-	print_type(header->e_type, header->e_ident);
-	print_entry(header->e_entry, header->e_ident);
+	print_magic(e_ident);
+	print_class(e_ident);
+	print_data(e_ident);
+	print_version(e_ident);
+	print_abi(e_ident);
+	print_abi_version(e_ident);
+	print_type(header->e_type, e_ident);
+	print_entry(header->e_entry, e_ident);
 
 	free(header);
 	close_elf(o);
-	return (0);
+	return 0;
+}
+
+void close_elf(int elf)
+{
+	if (close(elf) == -1)
+	{
+	dprintf(STDERR_FILENO, "Error: Can't close fd %d\n", elf);
+	exit(98);
+    }
+}
+
+void lseek_elf(int elf, off_t offset)
+{
+	off_t result = lseek(elf, offset, SEEK_SET);
+	if (result == -1)
+	{
+	close_elf(elf);
+	print_error("Error: Can't perform lseek operation\n");
+	exit(98);
+	}
+}
+
+void print_error(char *message)
+{
+	dprintf(STDERR_FILENO, "%s", message);
 }
